@@ -1,5 +1,5 @@
 # Ignorar el entorno virtual
-venv/
+mi_entorno/
 
 # Ignorar archivos de compilación de Python
 *.pyc

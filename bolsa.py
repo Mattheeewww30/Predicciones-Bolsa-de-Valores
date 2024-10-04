@@ -6,6 +6,8 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense, Dropout
+from sklearn.metrics import mean_squared_error
+
 
 
 
@@ -180,3 +182,12 @@ plt.plot(valid[['Close', 'Predictions']])
 plt.legend(['Entrenamiento', 'Valor Real', 'Predicción'], loc='lower right')
 plt.show()
 
+
+
+# CÁLCULO DE EFICIENCIA DEL MODELO:
+precio_promedio = y_test.mean()
+print(f'El precio promedio de las acciones es: {precio_promedio}')
+rmse = np.sqrt(mean_squared_error(y_test, predictions))
+print(f'RMSE: {rmse}')
+error_relativo = (rmse / precio_promedio) * 100
+print(f'Error relativo: {error_relativo}%')

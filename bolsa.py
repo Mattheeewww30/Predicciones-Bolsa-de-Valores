@@ -7,7 +7,7 @@ import tensorflow as tf
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense, Dropout
 from sklearn.metrics import mean_squared_error
-
+from datetime import timedelta
 
 
 
@@ -106,33 +106,28 @@ print(f"Nuevo tamaño de x_train: {x_train.shape}")
 
 # 3. CONSTRUCIÓN DEL MODELO:
 # Crear el modelo LSTM
+# Crear el modelo LSTM optimizado
 model = Sequential()
 
 # Primera capa LSTM con Dropout
-model.add(LSTM(units=50, return_sequences=True, input_shape=(x_train.shape[1], 1)))
+model.add(LSTM(units=64, return_sequences=True, input_shape=(x_train.shape[1], 1)))
 model.add(Dropout(0.2))
 
-# Segunda capa LSTM con Dropout
-model.add(LSTM(units=50, return_sequences=False))
+# Segunda capa LSTM
+model.add(LSTM(units=64, return_sequences=False))
 model.add(Dropout(0.2))
 
-# Capa Dense con 25 neuronas
-model.add(Dense(units=25))
+# Capa Dense con 50 neuronas
+model.add(Dense(units=50))
 
 # Capa final Dense con 1 neurona (predicción del precio)
 model.add(Dense(units=1))
 
-# Mostrar la arquitectura del modelo
-model.summary()
-
-
 # Compilar el modelo
 model.compile(optimizer='adam', loss='mean_squared_error')
 
-
-# Entrenar el modelo
-model.fit(x_train, y_train, batch_size=32, epochs=10)
-
+# Entrenar el modelo con datos optimizados
+model.fit(x_train, y_train, batch_size=32, epochs=30)
 
 
 
@@ -191,3 +186,56 @@ rmse = np.sqrt(mean_squared_error(y_test, predictions))
 print(f'RMSE: {rmse}')
 error_relativo = (rmse / precio_promedio) * 100
 print(f'Error relativo: {error_relativo}%')
+
+
+
+
+
+# GRÁFICO 3:
+
+# Supongamos que tienes 60 días anteriores
+# Datos más recientes (últimos 60 días) que serán usados como base para las predicciones futuras
+last_sequence = scaled_data[-window_size:]
+
+# Número de días a predecir (resto de 2024 + primer semestre de 2025)
+dias_a_predecir = 180  # Aproximadamente 6 meses
+
+# Lista para guardar las predicciones futuras
+futuras_predicciones = []
+
+# Generar predicciones futuras iterativamente
+for i in range(dias_a_predecir):
+    # Usar la secuencia más reciente para hacer la predicción
+    input_sequence = last_sequence.reshape((1, window_size, 1))
+    predicted_price = model.predict(input_sequence)
+
+    # Guardar la predicción
+    futuras_predicciones.append(predicted_price[0, 0])
+
+    # Actualizar la secuencia: descartar el primer valor y añadir la nueva predicción al final
+    last_sequence = np.append(last_sequence[1:], predicted_price)
+
+# Desescalar las predicciones a su valor original
+futuras_predicciones = np.array(futuras_predicciones).reshape(-1, 1)
+futuras_predicciones_desescaladas = scaler.inverse_transform(futuras_predicciones)
+
+# Crear fechas para las predicciones futuras
+ultima_fecha = pd.to_datetime(data.index[-1])  # Última fecha real en el dataset
+fechas_futuras = pd.date_range(ultima_fecha + timedelta(days=1), periods=dias_a_predecir, freq='D')
+
+# Graficar los resultados
+plt.figure(figsize=(16, 8))
+plt.plot(data['Close'], label='Datos Reales', color='blue')
+plt.plot(fechas_futuras, futuras_predicciones_desescaladas, label='Predicciones Futuras (2024-2025)', linestyle='--', color='orange')  # Línea discontinua
+
+# Asegurar que el eje X muestre las fechas de 2025-01 y 2025-07
+plt.title('Predicciones de Precios de Acciones para el resto de 2024 y primer semestre de 2025')
+plt.xlabel('Fecha')
+plt.ylabel('Precio de Cierre en USD')
+
+# Configuración de los ticks del eje X para incluir las fechas clave
+plt.xticks(pd.date_range(start='2024-01-01', end='2025-07-01', freq='6M'), rotation=45)
+
+plt.legend()
+plt.tight_layout()  # Ajustar el gráfico para evitar superposición de etiquetas
+plt.show()

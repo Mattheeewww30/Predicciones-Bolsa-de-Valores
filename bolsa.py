@@ -8,12 +8,12 @@ from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense, Dropout
 from sklearn.metrics import mean_squared_error
 from datetime import timedelta
+import matplotlib.dates as mdates
+from statsmodels.tsa.arima.model import ARIMA
+from statsmodels.tsa.statespace.sarimax import SARIMAX
 
 
-
-
-# 1. VISUALIZACIÓN DE DATOS:
-
+# 1. VISUALIZACIÓN DE DATONN
 # Selecciona la acción (por ejemplo, Tesla - TSLA)
 ticker = "TSLA"
 
@@ -193,49 +193,45 @@ print(f'Error relativo: {error_relativo}%')
 
 # GRÁFICO 3:
 
-# Supongamos que tienes 60 días anteriores
-# Datos más recientes (últimos 60 días) que serán usados como base para las predicciones futuras
-last_sequence = scaled_data[-window_size:]
+# Asegurarse de que el índice de 'close_data' es el original, sin alteraciones en la frecuencia
+close_data = data['Close']  # Volver a cargar la columna original para evitar cambios
 
-# Número de días a predecir (resto de 2024 + primer semestre de 2025)
-dias_a_predecir = 180  # Aproximadamente 6 meses
+# Configuración del modelo SARIMA con parámetros optimizados
+model_sarima = SARIMAX(close_data, order=(1, 1, 1), seasonal_order=(1, 1, 1, 30))
+model_sarima_fit = model_sarima.fit(disp=False)
 
-# Lista para guardar las predicciones futuras
-futuras_predicciones = []
+# Realizar predicciones para el periodo deseado (dos años = 730 días)
+forecast_sarima = model_sarima_fit.get_forecast(steps=730)
+forecast_index_sarima = pd.date_range(start=close_data.index[-1] + timedelta(days=1), periods=730, freq='D')
+forecast_values_sarima = forecast_sarima.predicted_mean
 
-# Generar predicciones futuras iterativamente
-for i in range(dias_a_predecir):
-    # Usar la secuencia más reciente para hacer la predicción
-    input_sequence = last_sequence.reshape((1, window_size, 1))
-    predicted_price = model.predict(input_sequence)
+# Calcular la desviación estándar de los rendimientos diarios para agregar ruido sin reducir
+daily_returns = close_data.pct_change().dropna()
+std_dev = daily_returns.std()
 
-    # Guardar la predicción
-    futuras_predicciones.append(predicted_price[0, 0])
+# Generar un componente de ruido sin reducción y un pequeño factor de retroceso para simular caídas y subidas
+noise = np.random.normal(0, std_dev, len(forecast_values_sarima))  # Sin reducción de ruido
+trend_adjustment = np.sin(np.linspace(0, 10, len(forecast_values_sarima))) * std_dev
 
-    # Actualizar la secuencia: descartar el primer valor y añadir la nueva predicción al final
-    last_sequence = np.append(last_sequence[1:], predicted_price)
+# Agregar el ruido y el componente de retroceso a las predicciones
+forecast_values_with_full_noise = forecast_values_sarima * (1 + noise + trend_adjustment)
 
-# Desescalar las predicciones a su valor original
-futuras_predicciones = np.array(futuras_predicciones).reshape(-1, 1)
-futuras_predicciones_desescaladas = scaler.inverse_transform(futuras_predicciones)
+# Ajuste de muestreo: Tomar un punto cada cierto intervalo (ej. cada 5 días)
+interval = 5  # Ajusta este valor para cambiar la separación entre los puntos en la gráfica
 
-# Crear fechas para las predicciones futuras
-ultima_fecha = pd.to_datetime(data.index[-1])  # Última fecha real en el dataset
-fechas_futuras = pd.date_range(ultima_fecha + timedelta(days=1), periods=dias_a_predecir, freq='D')
+# Filtrar las predicciones en intervalos para dar mayor separación visual
+forecast_values_with_full_noise_sampled = forecast_values_with_full_noise[::interval]
+forecast_index_sarima_sampled = forecast_index_sarima[::interval]
 
-# Graficar los resultados
+# Graficar los datos históricos y la predicción con separación y volatilidad completa
 plt.figure(figsize=(16, 8))
-plt.plot(data['Close'], label='Datos Reales', color='blue')
-plt.plot(fechas_futuras, futuras_predicciones_desescaladas, label='Predicciones Futuras (2024-2025)', linestyle='--', color='orange')  # Línea discontinua
+plt.plot(close_data, label='Precio Real', color='blue')  # Línea azul histórica sin cambios
+plt.plot(forecast_index_sarima_sampled, forecast_values_with_full_noise_sampled, 'o-', color='orange', label='Predicción SARIMA con Volatilidad Completa')
 
-# Asegurar que el eje X muestre las fechas de 2025-01 y 2025-07
-plt.title('Predicciones de Precios de Acciones para el resto de 2024 y primer semestre de 2025')
+# Añadir detalles al gráfico
+plt.title('Predicción de Precios de TSLA (2024-2026) usando SARIMA con Volatilidad Completa')
 plt.xlabel('Fecha')
 plt.ylabel('Precio de Cierre en USD')
-
-# Configuración de los ticks del eje X para incluir las fechas clave
-plt.xticks(pd.date_range(start='2024-01-01', end='2025-07-01', freq='6M'), rotation=45)
-
-plt.legend()
-plt.tight_layout()  # Ajustar el gráfico para evitar superposición de etiquetas
+plt.legend(loc='upper left')
+plt.grid(True)
 plt.show()
